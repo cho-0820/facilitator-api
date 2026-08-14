@@ -15,7 +15,19 @@
 
 ## 현재 단계
 - [x] Phase 1: PIN 기반 교사 대시보드 진입점 보호 (`/teacher`, `/teacher/login`, `middleware.ts`, Web Crypto HMAC-SHA256 토큰 쿠키 인증) (완료)
-- [ ] Phase 2: 교사 대시보드 통계 및 학급/학생별 세션·이벤트 뷰어 구현 (예정)
+- [x] Phase 2: 교사 대시보드 통계 API 및 UI 구현 (`GET /api/teacher/classrooms`, `GET /api/teacher/classrooms/[id]/summary`, `app/teacher/page.tsx`) (완료)
+
+## Phase 2 구현 결정사항
+1. **아동 개인정보 보호 (Consent Redaction)**:
+   - `consent_status === false`인 학생은 세션/이벤트 조회를 아예 건너뛰고 `{ id, student_code, nickname, consent_status: false, status_label: '비공개(미동의)', phase_counts: null, trigger_counts: null, repeated_errors: null, total_events: 0 }` 형태로 마스킹하여 반환.
+   - UI에서도 미동의 학생 행은 회색(`bg-gray-100`) 배경 및 "비공개(미동의)"로 처리하여 통계 데이터 노출을 완벽 차단.
+2. **트리거 전략 6종 및 국면(Phase) 매핑**:
+   - `trigger_strategy`: `modeling`, `scaffolding`, `coaching`, `clarification`, `reflection`, `exploration` (6종 원문 철자 유지, articulation 아님).
+   - 국면 매핑: `planning` (`modeling` + `scaffolding`), `monitoring` (`coaching` + `clarification`), `modification` (`reflection` + `exploration`).
+3. **반복 오류 집계**:
+   - `event_type === 'error'` 이벤트의 `payload.message` 기준 `count >= 2`인 오류만 내림차순 정렬하여 `repeated_errors` 배열로 제공.
+4. **UI 대시보드 구성**:
+   - `app/teacher/page.tsx`: 학급 선택 드롭다운, 학생별 통계 테이블 (학생 정보, 연구 동의 배지, 국면별 개입 뱃지, 전략별 개입 건수, 2회 이상 반복 오류 목록).
 
 ## Phase 1 구현 결정사항
 1. **PIN 환경변수 관리**:
@@ -30,3 +42,13 @@
 4. **UI 페이지**:
    - `/teacher/login`: 최소 PIN 입력 폼 (키보드 이벤트 및 fetch 통신)
    - `/teacher`: 인증된 교사 전용 자리표시자 페이지
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

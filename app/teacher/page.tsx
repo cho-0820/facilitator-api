@@ -62,6 +62,32 @@ interface ImportResponse {
     }>;
 }
 
+interface ProjectDetail {
+    id: string;
+    project_name: string;
+    updated_at: string;
+    block_summary: Record<string, number>;
+    total_blocks: number;
+    chat_messages: Array<{
+        role?: string;
+        type?: string;
+        text?: string;
+        message?: string;
+        timestamp?: string;
+        time?: string;
+    }>;
+    project_data: any;
+}
+
+interface StudentDetailResponse {
+    consent_status: boolean;
+    student?: {
+        nickname: string;
+        student_code: string;
+    };
+    projects?: ProjectDetail[];
+}
+
 export default function TeacherDashboardPage() {
     const [classrooms, setClassrooms] = useState<Classroom[]>([]);
     const [selectedClassroomId, setSelectedClassroomId] = useState<string>('');
@@ -75,6 +101,12 @@ export default function TeacherDashboardPage() {
     const [importing, setImporting] = useState(false);
     const [importResult, setImportResult] = useState<ImportResponse | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Detail Modal State
+    const [detailStudent, setDetailStudent] = useState<{ id: string; nickname: string; studentCode: string } | null>(null);
+    const [loadingDetail, setLoadingDetail] = useState(false);
+    const [detailData, setDetailData] = useState<StudentDetailResponse | null>(null);
+    const [selectedProjectIdx, setSelectedProjectIdx] = useState<number>(0);
 
     // 1. Fetch classrooms list on mount
     const fetchClassrooms = async () => {
@@ -154,7 +186,6 @@ export default function TeacherDashboardPage() {
             header: ['학급명', '닉네임', '학생코드', '동의여부']
         });
 
-        // Set column widths
         ws['!cols'] = [
             { wch: 15 },
             { wch: 18 },
@@ -221,13 +252,11 @@ export default function TeacherDashboardPage() {
 
             setImportResult(data);
 
-            // Reset file input
             setSelectedFile(null);
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
 
-            // Refresh classroom list & current summary
             await fetchClassrooms();
             if (selectedClassroomId) {
                 await fetchSummary(selectedClassroomId);
@@ -240,7 +269,53 @@ export default function TeacherDashboardPage() {
         }
     };
 
+    // 6. Handle Student Detail Modal
+    const handleOpenDetail = async (studentId: string, nickname: string, studentCode: string) => {
+        setDetailStudent({ id: studentId, nickname, studentCode });
+        setLoadingDetail(true);
+        setDetailData(null);
+        setSelectedProjectIdx(0);
+
+        try {
+            const res = await fetch(`/api/teacher/students/${studentId}/detail`);
+            if (!res.ok) {
+                throw new Error('학생 상세 정보를 불러오지 못했습니다.');
+            }
+            const data: StudentDetailResponse = await res.json();
+            setDetailData(data);
+        } catch (err: any) {
+            alert(err.message || '상세 조회 오류');
+            setDetailStudent(null);
+        } finally {
+            setLoadingDetail(false);
+        }
+    };
+
+    const handleCloseDetail = () => {
+        setDetailStudent(null);
+        setDetailData(null);
+        setSelectedProjectIdx(0);
+    };
+
+    // Download Project JSON
+    const handleDownloadProjectJson = (project: ProjectDetail) => {
+        if (!project || !project.project_data) return;
+        const jsonStr = JSON.stringify(project.project_data, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${detailStudent?.studentCode || 'student'}_${project.project_name || 'project'}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     const selectedClassroom = classrooms.find((c) => c.id === selectedClassroomId);
+    const activeProject = detailData?.projects && detailData.projects.length > 0
+        ? detailData.projects[selectedProjectIdx] || detailData.projects[0]
+        : null;
 
     return (
         <main style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '32px 24px', fontFamily: 'sans-serif', color: '#111827' }}>
@@ -464,6 +539,7 @@ export default function TeacherDashboardPage() {
                                         <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>국면별 개입 합계<br /><span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#6b7280' }}>계획 / 점검 / 수정</span></th>
                                         <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>트리거 전략별 개입<br /><span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#6b7280' }}>모델링 · 스캐폴딩 · 코칭 · 명료화 · 성찰 · 탐색</span></th>
                                         <th style={{ padding: '12px 16px', fontWeight: 600 }}>반복 오류 패턴 (≥2회)</th>
+                                        <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>작품 & 대화</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -551,6 +627,45 @@ export default function TeacherDashboardPage() {
                                                         <span style={{ fontStyle: 'italic', fontSize: '0.8125rem' }}>비공개(미동의)</span>
                                                     )}
                                                 </td>
+
+                                                {/* Detail Action */}
+                                                <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                                                    {isConsented ? (
+                                                        <button
+                                                            id={`btn-detail-${student.student_code}`}
+                                                            type="button"
+                                                            onClick={() => handleOpenDetail(student.id, student.nickname, student.student_code)}
+                                                            style={{
+                                                                padding: '6px 12px',
+                                                                backgroundColor: '#2563eb',
+                                                                color: '#ffffff',
+                                                                border: 'none',
+                                                                borderRadius: '4px',
+                                                                fontSize: '0.8125rem',
+                                                                fontWeight: 600,
+                                                                cursor: 'pointer',
+                                                            }}
+                                                        >
+                                                            상세보기
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            id={`btn-detail-disabled-${student.student_code}`}
+                                                            disabled
+                                                            style={{
+                                                                padding: '6px 12px',
+                                                                backgroundColor: '#e5e7eb',
+                                                                color: '#9ca3af',
+                                                                border: 'none',
+                                                                borderRadius: '4px',
+                                                                fontSize: '0.8125rem',
+                                                                cursor: 'not-allowed',
+                                                            }}
+                                                        >
+                                                            비공개
+                                                        </button>
+                                                    )}
+                                                </td>
                                             </tr>
                                         );
                                     })}
@@ -560,6 +675,244 @@ export default function TeacherDashboardPage() {
                     )}
                 </div>
             </div>
+
+            {/* Student Detail Modal */}
+            {detailStudent && (
+                <div
+                    id="student-detail-modal-overlay"
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 1000,
+                        padding: '20px'
+                    }}
+                >
+                    <div
+                        id="student-detail-modal"
+                        style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '10px',
+                            width: '100%',
+                            maxWidth: '900px',
+                            maxHeight: '90vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        {/* Modal Header */}
+                        <div style={{ padding: '16px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb' }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#111827' }}>
+                                    학생 상세: {detailStudent.nickname} <span style={{ fontSize: '0.9375rem', color: '#6b7280', fontWeight: 'normal' }}>({detailStudent.studentCode})</span>
+                                </h3>
+                                <p style={{ margin: '2px 0 0 0', fontSize: '0.8125rem', color: '#6b7280' }}>
+                                    저장된 작품(블록 요약) 및 AI 코드 도우미 대화 이력
+                                </p>
+                            </div>
+                            <button
+                                id="btn-close-detail-modal"
+                                onClick={handleCloseDetail}
+                                style={{
+                                    backgroundColor: 'transparent',
+                                    border: 'none',
+                                    fontSize: '1.5rem',
+                                    cursor: 'pointer',
+                                    color: '#6b7280',
+                                    lineHeight: 1,
+                                    padding: '4px 8px'
+                                }}
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+                            {loadingDetail ? (
+                                <div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>
+                                    학생 작품 및 대화 데이터를 불러오는 중입니다...
+                                </div>
+                            ) : !detailData?.consent_status ? (
+                                <div style={{ padding: '32px', textAlign: 'center', color: '#6b7280' }}>
+                                    연구 동의가 미완료(미동의)되어 상세 데이터를 열람할 수 없습니다.
+                                </div>
+                            ) : !detailData?.projects || detailData.projects.length === 0 ? (
+                                <div style={{ padding: '48px', textAlign: 'center', color: '#6b7280' }}>
+                                    저장된 작품(프로젝트)이 없습니다.
+                                </div>
+                            ) : (
+                                <div>
+                                    {/* Project Selector (if multiple) */}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <label style={{ fontWeight: 600, fontSize: '0.875rem' }}>작품 선택:</label>
+                                            <select
+                                                id="select-detail-project"
+                                                value={selectedProjectIdx}
+                                                onChange={(e) => setSelectedProjectIdx(Number(e.target.value))}
+                                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.875rem' }}
+                                            >
+                                                {detailData.projects.map((p, idx) => (
+                                                    <option key={p.id || idx} value={idx}>
+                                                        {p.project_name} ({new Date(p.updated_at).toLocaleString()}) - 블록 {p.total_blocks}개
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {activeProject && (
+                                            <button
+                                                id="btn-download-project-json"
+                                                type="button"
+                                                onClick={() => handleDownloadProjectJson(activeProject)}
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    backgroundColor: '#f3f4f6',
+                                                    color: '#374151',
+                                                    border: '1px solid #d1d5db',
+                                                    borderRadius: '6px',
+                                                    fontSize: '0.8125rem',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px'
+                                                }}
+                                            >
+                                                📥 프로젝트 원문 다운로드 (.json)
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {activeProject && (
+                                        <div>
+                                            {/* Section 1: Block Summary */}
+                                            <div style={{ marginBottom: '24px', backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                    <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600, color: '#1f2937' }}>
+                                                        🧩 블록 구성 요약
+                                                    </h4>
+                                                    <span style={{ fontSize: '0.8125rem', color: '#2563eb', fontWeight: 600 }}>
+                                                        총 블록 수: {activeProject.total_blocks}개
+                                                    </span>
+                                                </div>
+
+                                                {Object.keys(activeProject.block_summary || {}).length === 0 ? (
+                                                    <p style={{ margin: 0, fontSize: '0.8125rem', color: '#6b7280' }}>사용한 블록이 없습니다.</p>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+                                                        {Object.entries(activeProject.block_summary).map(([blockType, count]) => (
+                                                            <div
+                                                                key={blockType}
+                                                                style={{
+                                                                    backgroundColor: '#ffffff',
+                                                                    padding: '8px 12px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid #e5e7eb',
+                                                                    display: 'flex',
+                                                                    justifyContent: 'space-between',
+                                                                    alignItems: 'center',
+                                                                    fontSize: '0.8125rem'
+                                                                }}
+                                                            >
+                                                                <code style={{ color: '#1e40af', fontWeight: 500 }}>{blockType}</code>
+                                                                <span style={{ backgroundColor: '#eff6ff', color: '#1e40af', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                                                    {count}개
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Section 2: AI Chat Conversation Logs */}
+                                            <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                                                <h4 style={{ margin: '0 0 12px 0', fontSize: '0.9375rem', fontWeight: 600, color: '#1f2937' }}>
+                                                    💬 AI 코드 도우미 대화 이력 ({activeProject.chat_messages?.length || 0}건)
+                                                </h4>
+
+                                                {!activeProject.chat_messages || activeProject.chat_messages.length === 0 ? (
+                                                    <p style={{ margin: 0, fontSize: '0.8125rem', color: '#6b7280' }}>
+                                                        해당 프로젝트에 기록된 AI 대화 이력이 없습니다.
+                                                    </p>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                                                        {activeProject.chat_messages.map((msg: any, idx: number) => {
+                                                            const isUser = msg.type === 'user' || msg.role === 'user' || msg.sender === 'user';
+                                                            const text = msg.text || msg.message || msg.content || (typeof msg === 'string' ? msg : JSON.stringify(msg));
+                                                            const time = msg.time || msg.timestamp || '';
+
+                                                            return (
+                                                                <div
+                                                                    key={idx}
+                                                                    style={{
+                                                                        display: 'flex',
+                                                                        flexDirection: 'column',
+                                                                        alignItems: isUser ? 'flex-end' : 'flex-start',
+                                                                    }}
+                                                                >
+                                                                    <div style={{ fontSize: '0.6875rem', color: '#6b7280', marginBottom: '2px', padding: '0 4px' }}>
+                                                                        {isUser ? `학생 (${detailStudent.nickname})` : 'AI 코드 도우미'} {time && `· ${time}`}
+                                                                    </div>
+                                                                    <div
+                                                                        style={{
+                                                                            maxWidth: '85%',
+                                                                            padding: '10px 14px',
+                                                                            borderRadius: '8px',
+                                                                            backgroundColor: isUser ? '#2563eb' : '#ffffff',
+                                                                            color: isUser ? '#ffffff' : '#1f2937',
+                                                                            border: isUser ? 'none' : '1px solid #e5e7eb',
+                                                                            fontSize: '0.8125rem',
+                                                                            lineHeight: 1.5,
+                                                                            whiteSpace: 'pre-wrap',
+                                                                            wordBreak: 'break-word',
+                                                                            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                                                                        }}
+                                                                    >
+                                                                        {text}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div style={{ padding: '12px 24px', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#f9fafb' }}>
+                            <button
+                                type="button"
+                                onClick={handleCloseDetail}
+                                style={{
+                                    padding: '8px 16px',
+                                    backgroundColor: '#ffffff',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: '6px',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 500,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }

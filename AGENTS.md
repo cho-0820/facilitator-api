@@ -17,6 +17,17 @@
 - [x] Phase 1: PIN 기반 교사 대시보드 진입점 보호 (`/teacher`, `/teacher/login`, `middleware.ts`, Web Crypto HMAC-SHA256 토큰 쿠키 인증) (완료)
 - [x] Phase 2: 교사 대시보드 통계 API 및 UI 구현 (`GET /api/teacher/classrooms`, `GET /api/teacher/classrooms/[id]/summary`, `app/teacher/page.tsx`) (완료)
 - [x] Phase 3: 엑셀 학생 명단 일괄 등록 및 양식 다운로드 (`POST /api/teacher/students/import`, `xlsx` 기반 파싱 및 S{학년}-{반}-{번호} 자동채번, UI 결과 테이블 및 자동생성 코드 엑셀 내보내기) (완료)
+- [x] Phase 4: 학생 상세보기 — 작품 블록 요약 및 AI 대화로그 열람 (`GET /api/teacher/students/[studentId]/detail`, 재귀 블록 카운팅, 모달 UI 및 JSON 다운로드) (완료)
+
+## Phase 4 구현 결정사항 (학생 상세보기: 작품 요약 및 AI 대화로그)
+1. **아동 데이터 윤리 및 마스킹**:
+   - `consent_status === false`인 학생의 detail API 호출 시 `{ consent_status: false }`만 반환 (200 OK).
+   - 교사 대시보드 UI 테이블에서도 미동의 학생 행은 "비공개" 버튼으로 비활성화(`disabled`) 처리하여 접근 원천 차단.
+2. **블록 재귀 파싱 (`extractBlockSummary`)**:
+   - `project_data.objects[].script`의 최상위 스레드 블록뿐만 아니라, `statements` 내 중첩 분기 블록(반복문, 조건문 내부) 및 `params` 내 중첩 블록(연산자, 값 등)을 재귀적으로 모두 순회하여 타입별 개수 및 총 블록 수 집계.
+3. **AI 대화 로그 및 원문 JSON 다운로드**:
+   - `project_data.messages` 배열(__ENTRY_AI_MESSAGES__)을 시간순으로 파싱하여 학생/AI 말풍선으로 시각화.
+   - 교사가 필요 시 프로젝트 원문을 열어볼 수 있도록 `📥 프로젝트 원문 다운로드 (.json)` 기능 제공.
 
 ## Phase 3 구현 결정사항 (엑셀 학생 명단 일괄 등록)
 1. **양식 및 파일 지원**:

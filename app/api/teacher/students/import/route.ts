@@ -191,7 +191,7 @@ export async function POST(req: Request) {
                     .select('id')
                     .single();
 
-                if (classInsErr || !newClass) {
+                if (classInsErr || !newClass || !newClass.id) {
                     results.push({
                         row: rowNumber,
                         classroom_name: rawClass,
@@ -202,7 +202,19 @@ export async function POST(req: Request) {
                     continue;
                 }
                 classroomId = newClass.id;
-                classroomMap.set(rawClass, classroomId!);
+                classroomMap.set(rawClass, newClass.id);
+            }
+
+            // Explicit safety guard to narrow classroomId to string
+            if (!classroomId) {
+                results.push({
+                    row: rowNumber,
+                    classroom_name: rawClass,
+                    nickname: rawNick,
+                    status: 'failed',
+                    reason: '학급 ID를 확인할 수 없습니다.'
+                });
+                continue;
             }
 
             // Determine student code

@@ -51,10 +51,16 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        // Fetch all projects for this student (exclude heavy project_data for list view)
+        const includeData = searchParams.get('include_data') === 'true';
+
+        // Fetch all projects for this student
+        const selectFields = includeData
+            ? 'id, project_name, project_data, updated_at'
+            : 'id, project_name, updated_at';
+
         const { data: projects, error: projectsErr } = await supabase
             .from('projects')
-            .select('id, project_name, updated_at')
+            .select(selectFields)
             .eq('student_id', student.id)
             .order('updated_at', { ascending: false });
 

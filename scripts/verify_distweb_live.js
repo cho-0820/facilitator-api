@@ -1,80 +1,73 @@
-// facilitator-api/scripts/verify_distweb_live.js
 const puppeteer = require('puppeteer-core');
 const path = require('path');
 const fs = require('fs');
 
 const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const USER_DATA_DIR = path.join(__dirname, '../.puppeteer_distweb_profile_' + Date.now());
+const USER_DATA_DIR = path.join(__dirname, '../.puppeteer_verify_live_' + Date.now());
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function verify() {
-    console.log('===========================================================');
-    console.log('=== VERIFYING LIVE DEPLOYMENT: distweb-theta.vercel.app ===');
-    console.log('===========================================================\n');
+async function verifyLive() {
+    console.log('=== 4. POST-DEPLOYMENT VERIFICATION ===\n');
 
-    // 1. Check HttpDataUploader in live bundle
-    console.log('1. Checking HttpDataUploader in live render.bundle.js...');
+    // 1. Fetch & Verify render.bundle.js strings directly
+    console.log('1. Checking Live render.bundle.js for facilitator_intervention & logFacilitatorIntervention ...');
     const bundleUrl = 'https://distweb-theta.vercel.app/src/renderer_build/render.bundle.js';
-    const bundleRes = await fetch(bundleUrl);
-    console.log(`- Fetch bundle status: ${bundleRes.status} ${bundleRes.statusText}`);
-    const bundleText = await bundleRes.text();
-    console.log(`- Bundle size: ${bundleText.length} bytes`);
+    const res = await fetch(bundleUrl);
+    console.log(`- Fetch ${bundleUrl}: HTTP ${res.status} ${res.statusText}`);
+    const bundleCode = await res.text();
 
-    const hasHttpDataUploader = bundleText.includes('HttpDataUploader');
-    const hasApiLogs = bundleText.includes('/api/logs');
-    const hasSessionStorageStudentCode = bundleText.includes("sessionStorage.getItem('student_code')") || bundleText.includes('student_code');
+    const hasInterventionType = bundleCode.includes('facilitator_intervention');
+    const hasLogHelper = bundleCode.includes('logFacilitatorIntervention');
 
-    console.log(`- Includes 'HttpDataUploader': ${hasHttpDataUploader}`);
-    console.log(`- Includes '/api/logs': ${hasApiLogs}`);
-    console.log(`- Includes dynamic student_code reading: ${hasSessionStorageStudentCode}\n`);
+    console.log(`- Contains 'facilitator_intervention': ${hasInterventionType}`);
+    console.log(`- Contains 'logFacilitatorIntervention': ${hasLogHelper}`);
 
-    // 2. Open browser and check for 404s and take screenshot
-    console.log('2. Launching browser to verify page load & console/network errors...');
+    if (!hasInterventionType || !hasLogHelper) {
+        throw new Error('Live render.bundle.js does not contain the updated facilitator intervention code!');
+    }
+
+    // 2. Launch Browser & Check main.html for 404/5xx errors
+    console.log('\n2. Navigating to https://distweb-theta.vercel.app/src/main/views/main.html ...');
     const browser = await puppeteer.launch({
         executablePath: CHROME_PATH,
         headless: true,
         userDataDir: USER_DATA_DIR,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--window-size=1400,900']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--window-size=1280,800']
     });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1400, height: 900 });
-
     const failedRequests = [];
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
+
     page.on('response', response => {
-        if (response.status() >= 400) {
-            failedRequests.push({ url: response.url(), status: response.status() });
+        const status = response.status();
+        const url = response.url();
+        if (status >= 400) {
+            failedRequests.push({ status, url });
         }
     });
 
-    const consoleLogs = [];
-    page.on('console', msg => {
-        consoleLogs.push({ type: msg.type(), text: msg.text() });
-    });
-
-    const targetUrl = 'https://distweb-theta.vercel.app/src/main/views/main.html';
-    console.log(`- Navigating to ${targetUrl} ...`);
-    await page.goto(targetUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.goto('https://distweb-theta.vercel.app/src/main/views/main.html', { waitUntil: 'networkidle0' });
     await sleep(3000);
 
     const shotPath = path.resolve(__dirname, '../../visualizations/screenshot_distweb_live_verified.png');
     await page.screenshot({ path: shotPath, fullPage: false });
-    console.log(`- Screenshot saved to: ${shotPath} (${fs.statSync(shotPath).size} bytes)`);
+    console.log(`- Live page screenshot saved to: ${shotPath}`);
 
-    console.log('\n3. Failed Requests Count:', failedRequests.length);
+    console.log(`\n- Total Failed HTTP Requests (4xx/5xx): ${failedRequests.length}`);
     if (failedRequests.length > 0) {
-        console.table(failedRequests.slice(0, 10));
-    } else {
-        console.log('- 0 HTTP 4xx/5xx errors! All assets loaded cleanly.');
+        console.table(failedRequests);
+        throw new Error(`Found ${failedRequests.length} failed HTTP requests during live page load!`);
     }
 
+    console.log('✓ Post-deployment live verification PASSED successfully (0 errors, strings verified)!');
     await browser.close();
 }
 
-verify().catch(err => {
-    console.error('Fatal error during verification:', err);
+verifyLive().catch(err => {
+    console.error('Live verification failed:', err);
     process.exit(1);
 });
